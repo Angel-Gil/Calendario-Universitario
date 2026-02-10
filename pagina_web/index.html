@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calendario Académico</title>
+
+    <!-- Meta tags para previsualización -->
+    <meta property="og:title" content="Calendario Académico">
+    <meta property="og:description" content="Gestiona tus semestres, materias y notas de forma fácil.">
+    <meta property="og:image" content="https://cu-rose.vercel.app/icon.png">
+    <meta property="og:url" content="https://cu-rose.vercel.app">
+
+    <link rel="stylesheet" href="/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <div class="card">
+            <img src="/images/logo.png" alt="Calendario Académico" class="logo-img">
+            <h1>Calendario Académico</h1>
+            <p id="message">Abriendo la aplicación...</p>
+
+            <!-- Share Code Display -->
+            <div id="share-code-container" style="display: none;">
+                <div class="code-box">
+                    <span id="share-code-text"></span>
+                    <button onclick="copyShareCode()" class="copy-btn" title="Copiar código">📋</button>
+                </div>
+                <p class="code-hint">Copia este código para importar en la app</p>
+            </div>
+
+            <!-- Container for Password Reset Form -->
+            <div id="reset-password-container" style="display: none;">
+                <input type="password" id="new-password" placeholder="Nueva contraseña" class="input-field">
+                <button onclick="handleResetPassword()" class="primary-btn">Guardar Contraseña</button>
+            </div>
+
+            <div class="actions" id="app-actions">
+                <button id="open-app-btn" onclick="tryOpenApp()">Abrir en la App</button>
+                <a href="https://github.com/Angel-Gil/Calendario-Universitario/releases/latest" class="secondary-btn"
+                    target="_blank">⬇️ Descargar App</a>
+            </div>
+
+            <div class="footer">
+                <p>¿No tienes la app instalada?</p>
+                <a href="https://github.com/Angel-Gil/Calendario-Universitario" target="_blank">Ver en GitHub</a>
+            </div>
+        </div>
+    </div>
+    <script src="/script.js"></script>
+</body>
+
+</html>
