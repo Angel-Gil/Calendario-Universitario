@@ -8,6 +8,7 @@ import '../../services/auth_service.dart';
 import '../../services/sync_service.dart';
 import '../../services/share_service.dart'; // Ensure it's available or via services.dart
 import 'scan_qr_screen.dart';
+import 'trash_screen.dart';
 
 /// Pantalla de lista de semestres
 class SemestersScreen extends StatefulWidget {
@@ -85,9 +86,20 @@ class _SemestersScreenState extends State<SemestersScreen>
             tooltip: 'Importar Semestre',
           ),
           IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadSemesters,
-            tooltip: 'Recargar',
+            icon: const Icon(Icons.cloud_upload),
+            onPressed: () => _backupData(),
+            tooltip: 'Subir cambios',
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const TrashScreen()),
+              );
+              _loadSemesters();
+            },
+            tooltip: 'Papelera',
           ),
         ],
         bottom: TabBar(
@@ -405,7 +417,7 @@ class _SemestersScreenState extends State<SemestersScreen>
       builder: (context) => AlertDialog(
         title: const Text('¿Eliminar semestre?'),
         content: const Text(
-          'Esta acción no se puede deshacer. Se eliminarán todas las materias asociadas.',
+          'El semestre se moverá a la papelera. Podrás restaurarlo desde ahí.',
         ),
         actions: [
           TextButton(
@@ -430,6 +442,41 @@ class _SemestersScreenState extends State<SemestersScreen>
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Semestre eliminado')));
+      }
+    }
+  }
+
+  Future<void> _backupData() async {
+    if (AuthService.instance.isGuest) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Inicia sesión para hacer backup')),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Subiendo datos...')));
+
+    try {
+      await SyncService.instance.backupData();
+      _loadSemesters();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Datos subidos correctamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al subir datos: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }

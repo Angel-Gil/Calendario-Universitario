@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/models.dart';
+import 'auth_service.dart';
 
 /// Servicio de base de datos local usando Hive
 class LocalDatabaseService {
@@ -90,6 +93,19 @@ class LocalDatabaseService {
       ..sort((a, b) => b.startDate.compareTo(a.startDate));
   }
 
+  /// Obtiene TODOS los semestres incluyendo eliminados (para sync)
+  List<SemesterModel> getAllSemestersForSync(String userId) {
+    return _semesterBox.values
+        .map((data) => _semesterFromMap(data))
+        .where((s) => s.userId == userId)
+        .toList();
+  }
+
+  /// Obtiene TODAS las materias incluyendo eliminadas (para sync)
+  List<SubjectModel> getAllSubjectsForSync() {
+    return _subjectBox.values.map((data) => _subjectFromMap(data)).toList();
+  }
+
   SemesterModel? getSemester(String syncId) {
     final data = _semesterBox.get(syncId);
     if (data == null) return null;
@@ -97,7 +113,19 @@ class LocalDatabaseService {
   }
 
   Future<void> deleteSemester(String syncId) async {
-    await _semesterBox.delete(syncId);
+    // Soft delete: set deletedAt instead of removing
+    final semester = getSemester(syncId);
+    if (semester == null) return;
+
+    // Soft delete all subjects for this semester
+    final subjects = getSubjects(syncId);
+    for (final subject in subjects) {
+      await deleteSubject(subject.syncId);
+    }
+
+    await saveSemester(
+      semester.copyWith(deletedAt: DateTime.now(), isSynced: false),
+    );
     _notifyChange();
   }
 
@@ -113,6 +141,9 @@ class LocalDatabaseService {
           ? SemesterStatus.archived
           : SemesterStatus.active,
       isSynced: json['isSynced'] ?? false,
+      deletedAt: json['deletedAt'] != null
+          ? DateTime.parse(json['deletedAt'])
+          : null,
     );
   }
 
@@ -139,7 +170,107 @@ class LocalDatabaseService {
   }
 
   Future<void> deleteSubject(String syncId) async {
+    // Soft delete: set deletedAt instead of removing
+    final subject = getSubject(syncId);
+    if (subject == null) return;
+
+    await saveSubject(
+      subject.copyWith(deletedAt: DateTime.now(), isSynced: false),
+    );
+    _notifyChange();
+  }
+
+  // ==================== PAPELERA ====================
+
+  /// Obtiene semestres en la papelera
+  List<SemesterModel> getDeletedSemesters(String userId) {
+    return _semesterBox.values
+        .map((data) => _semesterFromMap(data))
+        .where((s) => s.userId == userId && s.deletedAt != null)
+        .toList()
+      ..sort((a, b) => b.deletedAt!.compareTo(a.deletedAt!));
+  }
+
+  /// Obtiene materias en la papelera
+  List<SubjectModel> getDeletedSubjects() {
+    return _subjectBox.values
+        .map((data) => _subjectFromMap(data))
+        .where((s) => s.deletedAt != null)
+        .toList();
+  }
+
+  /// Restaura un semestre de la papelera
+  Future<void> restoreSemester(String syncId) async {
+    final semester = getSemester(syncId);
+    if (semester == null) return;
+
+    await saveSemester(
+      semester.copyWith(clearDeletedAt: true, isSynced: false),
+    );
+
+    // Restore subjects too
+    final deletedSubjects = _subjectBox.values
+        .map((data) => _subjectFromMap(data))
+        .where((s) => s.semesterId == syncId && s.deletedAt != null)
+        .toList();
+    for (final subject in deletedSubjects) {
+      await restoreSubject(subject.syncId);
+    }
+    _notifyChange();
+  }
+
+  /// Restaura una materia de la papelera
+  Future<void> restoreSubject(String syncId) async {
+    final subject = getSubject(syncId);
+    if (subject == null) return;
+
+    await saveSubject(subject.copyWith(clearDeletedAt: true, isSynced: false));
+    _notifyChange();
+  }
+
+  /// Elimina permanentemente un semestre (de Hive y Firestore)
+  Future<void> permanentlyDeleteSemester(String syncId) async {
+    // Delete all subjects permanently
+    final subjects = _subjectBox.values
+        .map((data) => _subjectFromMap(data))
+        .where((s) => s.semesterId == syncId)
+        .toList();
+    for (final subject in subjects) {
+      await permanentlyDeleteSubject(subject.syncId);
+    }
+    await _semesterBox.delete(syncId);
+    _deleteFromCloud('semesters', syncId);
+    _notifyChange();
+  }
+
+  /// Elimina permanentemente una materia (de Hive y Firestore)
+  Future<void> permanentlyDeleteSubject(String syncId) async {
+    // Delete grade periods
+    final periods = getGradePeriods(syncId);
+    for (final period in periods) {
+      await _gradePeriodBox.delete(period.syncId);
+      _deleteFromCloud('gradePeriods', period.syncId);
+    }
+    // Delete schedules
+    final schedules = _scheduleBox.values
+        .map((data) => ScheduleModel.fromJson(Map<String, dynamic>.from(data)))
+        .where((s) => s.subjectId == syncId)
+        .toList();
+    for (final schedule in schedules) {
+      await _scheduleBox.delete(schedule.syncId);
+      _deleteFromCloud('schedules', schedule.syncId);
+    }
     await _subjectBox.delete(syncId);
+    _deleteFromCloud('subjects', syncId);
+    _notifyChange();
+  }
+
+  /// Vacía toda la papelera
+  Future<void> emptyTrash(String userId) async {
+    final deletedSemesters = getDeletedSemesters(userId);
+    for (final semester in deletedSemesters) {
+      await permanentlyDeleteSemester(semester.syncId);
+    }
     _notifyChange();
   }
 
@@ -154,6 +285,9 @@ class LocalDatabaseService {
       passingGrade: (json['passingGrade'] as num).toDouble(),
       credits: json['credits'],
       isSynced: json['isSynced'] ?? false,
+      deletedAt: json['deletedAt'] != null
+          ? DateTime.parse(json['deletedAt'])
+          : null,
     );
   }
 
@@ -352,5 +486,22 @@ class LocalDatabaseService {
     await _subjectBox.clear();
     await _gradePeriodBox.clear();
     await _eventBox.clear();
+  }
+
+  /// Elimina un documento de Firestore para que no se re-descargue en sync.
+  void _deleteFromCloud(String collection, String docId) {
+    final user = AuthService.instance.currentUser;
+    if (user == null || AuthService.instance.isGuest) return;
+
+    FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection(collection)
+        .doc(docId)
+        .delete()
+        .then((_) => debugPrint('Cloud: Eliminado $collection/$docId'))
+        .catchError(
+          (e) => debugPrint('Cloud: Error eliminando $collection/$docId: $e'),
+        );
   }
 }

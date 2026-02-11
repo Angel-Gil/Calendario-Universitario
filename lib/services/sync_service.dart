@@ -25,51 +25,21 @@ class SyncService {
   Stream<SyncStatus> get syncStatus => _syncStatusController.stream;
 
   DateTime? _lastSyncAt;
-  Timer? _debounceTimer;
 
-  /// Inicializa el monitoreo de conectividad
+  /// Inicializa el monitoreo de conectividad (solo para saber si hay internet)
   Future<void> initialize() async {
     final result = await _connectivity.checkConnectivity();
     _isOnline = !result.contains(ConnectivityResult.none);
 
     _subscription = _connectivity.onConnectivityChanged.listen((results) {
-      final wasOnline = _isOnline;
       _isOnline = !results.contains(ConnectivityResult.none);
-
-      if (!wasOnline && _isOnline) {
-        // Reconectado - intentar sincronizar
-        syncNow();
-      }
-
       _notifyStatus();
     });
 
-    // Escuchar cambios de autenticación para sincronizar al iniciar sesión
-    AuthService.instance.authState.addListener(() {
-      final user = AuthService.instance.currentUser;
-      if (user != null && !AuthService.instance.isGuest && _isOnline) {
-        debugPrint(
-          'SyncService: Usuario autenticado, iniciando sincronización...',
-        );
-        syncNow();
-      }
-    });
-
-    // Escuchar cambios en DB local para auto-backup
-    _db.onDataChanged.listen((_) {
-      if (_isOnline && !AuthService.instance.isGuest) {
-        _scheduleAutoSync();
-      }
-    });
+    // NO auto-sync: el usuario decide cuándo subir/descargar datos
   }
 
-  void _scheduleAutoSync() {
-    if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
-    _debounceTimer = Timer(const Duration(seconds: 5), () {
-      debugPrint('SyncService: Ejecutando auto-backup...');
-      syncNow();
-    });
-  }
+  // Auto-sync deshabilitado - solo sync manual via backupData() y restoreData()
 
   void _notifyStatus({bool isSyncing = false, String? error}) {
     _syncStatusController.add(
@@ -148,10 +118,11 @@ class SyncService {
 
   Future<int> _syncSemesters(String userId) async {
     int count = 0;
-    final localSemesters = _db.getSemesters(userId, includeArchived: true);
+    // Get ALL semesters including soft-deleted for upload
+    final allLocal = _db.getAllSemestersForSync(userId);
 
-    // Subir locales no sincronizados
-    for (final semester in localSemesters.where((s) => !s.isSynced)) {
+    // Subir locales no sincronizados (incluyendo eliminados)
+    for (final semester in allLocal.where((s) => !s.isSynced)) {
       try {
         await _firestore
             .collection('users')
@@ -178,17 +149,28 @@ class SyncService {
           .get();
 
       for (final doc in snapshot.docs) {
+        final data = doc.data();
+        // If local version exists and is soft-deleted, don't overwrite
+        final localSemester = _db.getSemester(doc.id);
+        if (localSemester != null && localSemester.deletedAt != null) continue;
+
         final remote = SemesterModel(
           syncId: doc.id,
-          userId: doc.data()['userId'],
-          name: doc.data()['name'],
-          startDate: DateTime.parse(doc.data()['startDate']),
-          endDate: DateTime.parse(doc.data()['endDate']),
-          status: doc.data()['status'] == 'archived'
+          userId: data['userId'],
+          name: data['name'],
+          startDate: DateTime.parse(data['startDate']),
+          endDate: DateTime.parse(data['endDate']),
+          status: data['status'] == 'archived'
               ? SemesterStatus.archived
               : SemesterStatus.active,
           isSynced: true,
+          deletedAt: data['deletedAt'] != null
+              ? DateTime.parse(data['deletedAt'])
+              : null,
         );
+        // Don't restore items that are deleted in Firestore
+        if (remote.deletedAt != null) continue;
+
         await _db.saveSemester(remote);
         count++;
       }
@@ -202,27 +184,23 @@ class SyncService {
   Future<int> _syncSubjects(String userId) async {
     int count = 0;
 
-    // Obtener todos los semestres del usuario
-    final semesters = _db.getSemesters(userId, includeArchived: true);
+    // Get ALL subjects including soft-deleted for upload
+    final allLocal = _db.getAllSubjectsForSync();
 
-    for (final semester in semesters) {
-      final localSubjects = _db.getSubjects(semester.syncId);
+    // Subir no sincronizados (incluyendo eliminados)
+    for (final subject in allLocal.where((s) => !s.isSynced)) {
+      try {
+        await _firestore
+            .collection('users')
+            .doc(userId)
+            .collection('subjects')
+            .doc(subject.syncId)
+            .set(subject.toJson());
 
-      // Subir no sincronizados
-      for (final subject in localSubjects.where((s) => !s.isSynced)) {
-        try {
-          await _firestore
-              .collection('users')
-              .doc(userId)
-              .collection('subjects')
-              .doc(subject.syncId)
-              .set(subject.toJson());
-
-          await _db.saveSubject(subject.copyWith(isSynced: true));
-          count++;
-        } catch (e) {
-          debugPrint('SyncService: Error sincronizando materia: $e');
-        }
+        await _db.saveSubject(subject.copyWith(isSynced: true));
+        count++;
+      } catch (e) {
+        debugPrint('SyncService: Error sincronizando materia: $e');
       }
     }
 
@@ -236,6 +214,10 @@ class SyncService {
 
       for (final doc in snapshot.docs) {
         final data = doc.data();
+        // If local version exists and is soft-deleted, don't overwrite
+        final localSubject = _db.getSubject(doc.id);
+        if (localSubject != null && localSubject.deletedAt != null) continue;
+
         final remote = SubjectModel(
           syncId: doc.id,
           semesterId: data['semesterId'],
@@ -245,7 +227,13 @@ class SyncService {
           passingGrade: (data['passingGrade'] as num).toDouble(),
           credits: data['credits'],
           isSynced: true,
+          deletedAt: data['deletedAt'] != null
+              ? DateTime.parse(data['deletedAt'])
+              : null,
         );
+        // Don't restore items that are deleted in Firestore
+        if (remote.deletedAt != null) continue;
+
         await _db.saveSubject(remote);
         count++;
       }

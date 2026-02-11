@@ -359,7 +359,7 @@ class _SemesterDetailScreenState extends State<SemesterDetailScreen> {
                   builder: (context) => AlertDialog(
                     title: const Text('¿Eliminar semestre?'),
                     content: const Text(
-                      'Se eliminarán todas las materias. Esta acción no se puede deshacer.',
+                      'El semestre se moverá a la papelera. Podrás restaurarlo desde ahí.',
                     ),
                     actions: [
                       TextButton(
@@ -416,7 +416,7 @@ class _SemesterDetailScreenState extends State<SemesterDetailScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('¿Eliminar materia?'),
-        content: Text('Se eliminará "${subject.name}" y todas sus notas.'),
+        content: Text('Se moverá "${subject.name}" a la papelera.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -514,9 +514,7 @@ class _SemesterDetailScreenState extends State<SemesterDetailScreen> {
               icon: const Icon(Icons.share),
               label: const Text('Enviar'),
               onPressed: () {
-                Share.share(
-                  'Importa mi semestre en Calendario Académico: $shareLink',
-                );
+                Share.share('Importa mi semestre en UniCal: $shareLink');
               },
             ),
             TextButton(

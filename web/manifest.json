@@ -1,6 +1,6 @@
 {
-    "name": "calendario_academico",
-    "short_name": "calendario_academico",
+    "name": "UniCal",
+    "short_name": "UniCal",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

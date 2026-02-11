@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/enums.dart';
 
-/// Tema de la aplicación Calendario Académico
+/// Tema de la aplicación UniCal
 class AppTheme {
   // Colores principales
   static const Color primaryColor = Color(0xFF6366F1); // Indigo

@@ -35,7 +35,7 @@ class NotificationService {
     } else if (Platform.isWindows) {
       // Windows Initialization
       await localNotifier.setup(
-        appName: 'Calendario Académico',
+        appName: 'UniCal',
         shortcutPolicy: ShortcutPolicy.requireCreate,
       );
     } else if (Platform.isAndroid) {

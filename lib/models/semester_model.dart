@@ -36,6 +36,8 @@ class SemesterModel {
     'status': status.name,
     'createdAt': createdAt.toIso8601String(),
     'updatedAt': updatedAt.toIso8601String(),
+    'isSynced': isSynced,
+    if (deletedAt != null) 'deletedAt': deletedAt!.toIso8601String(),
   };
 
   factory SemesterModel.fromJson(Map<String, dynamic> json) => SemesterModel(
@@ -60,6 +62,8 @@ class SemesterModel {
     String? name,
     SemesterStatus? status,
     bool? isSynced,
+    DateTime? deletedAt,
+    bool clearDeletedAt = false,
   }) => SemesterModel(
     syncId: syncId,
     userId: userId,
@@ -70,6 +74,6 @@ class SemesterModel {
     createdAt: createdAt,
     updatedAt: DateTime.now(),
     isSynced: isSynced ?? this.isSynced,
-    deletedAt: deletedAt,
+    deletedAt: clearDeletedAt ? null : (deletedAt ?? this.deletedAt),
   );
 }

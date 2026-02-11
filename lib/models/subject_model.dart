@@ -37,6 +37,8 @@ class SubjectModel {
     'credits': credits,
     'createdAt': createdAt.toIso8601String(),
     'updatedAt': updatedAt.toIso8601String(),
+    'isSynced': isSynced,
+    if (deletedAt != null) 'deletedAt': deletedAt!.toIso8601String(),
   };
 
   factory SubjectModel.fromJson(Map<String, dynamic> json) => SubjectModel(
@@ -61,6 +63,8 @@ class SubjectModel {
     int? colorValue,
     double? passingGrade,
     bool? isSynced,
+    DateTime? deletedAt,
+    bool clearDeletedAt = false,
   }) => SubjectModel(
     syncId: syncId,
     semesterId: semesterId,
@@ -72,6 +76,6 @@ class SubjectModel {
     createdAt: createdAt,
     updatedAt: DateTime.now(),
     isSynced: isSynced ?? this.isSynced,
-    deletedAt: deletedAt,
+    deletedAt: clearDeletedAt ? null : (deletedAt ?? this.deletedAt),
   );
 }
