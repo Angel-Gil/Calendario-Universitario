@@ -289,6 +289,13 @@ class SyncService {
           obtainedGrade: data['obtainedGrade'] != null
               ? (data['obtainedGrade'] as num).toDouble()
               : null,
+          grades: data['grades'] != null
+              ? (data['grades'] as List)
+                    .map(
+                      (g) => GradeEntry.fromJson(Map<String, dynamic>.from(g)),
+                    )
+                    .toList()
+              : [],
           order: data['order'],
           createdAt: DateTime.parse(data['createdAt']),
           updatedAt: data['updatedAt'] != null
@@ -420,30 +427,63 @@ class SyncService {
       if (user == null) throw Exception('No usuario');
 
       int count = 0;
-      // Forzar subida de semestres
+      final userDoc = _firestore.collection('users').doc(user.uid);
+
+      // 1. Subir semestres
       final semesters = _db.getSemesters(user.uid, includeArchived: true);
       for (final s in semesters) {
-        await _firestore
-            .collection('users')
-            .doc(user.uid)
-            .collection('semesters')
-            .doc(s.syncId)
-            .set(s.toJson());
+        await userDoc.collection('semesters').doc(s.syncId).set(s.toJson());
+        await _db.saveSemester(s.copyWith(isSynced: true));
         count++;
       }
-      // Forzar subida de materias
+
+      // 2. Subir materias
       for (final s in semesters) {
         final subjects = _db.getSubjects(s.syncId);
         for (final sub in subjects) {
-          await _firestore
-              .collection('users')
-              .doc(user.uid)
+          await userDoc
               .collection('subjects')
               .doc(sub.syncId)
               .set(sub.toJson());
+          await _db.saveSubject(sub.copyWith(isSynced: true));
+          count++;
+
+          // 3. Subir cortes de cada materia
+          final periods = _db.getGradePeriods(sub.syncId);
+          for (final p in periods) {
+            await userDoc
+                .collection('grade_periods')
+                .doc(p.syncId)
+                .set(p.toJson());
+            await _db.saveGradePeriod(p.copyWith(isSynced: true));
+            count++;
+          }
+        }
+
+        // 4. Subir horarios del semestre
+        final schedules = _db.getAllSchedulesForSemester(s.syncId);
+        for (final sch in schedules) {
+          await userDoc
+              .collection('schedules')
+              .doc(sch.syncId)
+              .set(sch.toJson());
+          await _db.saveSchedule(sch.copyWith(isSynced: true));
           count++;
         }
       }
+
+      // 5. Subir eventos (buscando por semestre)
+      for (final s in semesters) {
+        final events = _db.getEventsForSemester(s.syncId);
+        for (final e in events) {
+          await userDoc.collection('events').doc(e.syncId).set(e.toJson());
+          await _db.saveEvent(e.copyWith(isSynced: true));
+          count++;
+        }
+      }
+
+      _lastSyncAt = DateTime.now();
+      _notifyStatus();
 
       return SyncResult(
         success: true,
@@ -473,13 +513,10 @@ class SyncService {
       if (user == null) throw Exception('No usuario');
 
       int count = 0;
+      final userDoc = _firestore.collection('users').doc(user.uid);
 
       // 1. Descargar Semestres
-      final semSnap = await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .collection('semesters')
-          .get();
+      final semSnap = await userDoc.collection('semesters').get();
       for (final doc in semSnap.docs) {
         final data = doc.data();
         data['syncId'] = doc.id;
@@ -490,11 +527,7 @@ class SyncService {
       }
 
       // 2. Descargar Materias
-      final subSnap = await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .collection('subjects')
-          .get();
+      final subSnap = await userDoc.collection('subjects').get();
       for (final doc in subSnap.docs) {
         final data = doc.data();
         data['syncId'] = doc.id;
@@ -504,8 +537,76 @@ class SyncService {
         count++;
       }
 
-      // 3. Descargar Eventos
-      // (Implementación básica por ahora)
+      // 3. Descargar Cortes (grade_periods)
+      final gpSnap = await userDoc.collection('grade_periods').get();
+      for (final doc in gpSnap.docs) {
+        final data = doc.data();
+        final p = GradePeriodModel(
+          syncId: doc.id,
+          subjectId: data['subjectId'],
+          name: data['name'],
+          percentage: (data['percentage'] as num).toDouble(),
+          obtainedGrade: data['obtainedGrade'] != null
+              ? (data['obtainedGrade'] as num).toDouble()
+              : null,
+          grades: data['grades'] != null
+              ? (data['grades'] as List)
+                    .map(
+                      (g) => GradeEntry.fromJson(Map<String, dynamic>.from(g)),
+                    )
+                    .toList()
+              : [],
+          order: data['order'],
+          createdAt: DateTime.parse(data['createdAt']),
+          updatedAt: data['updatedAt'] != null
+              ? DateTime.parse(data['updatedAt'])
+              : null,
+          isSynced: true,
+        );
+        await _db.saveGradePeriod(p);
+        count++;
+      }
+
+      // 4. Descargar Horarios
+      final schSnap = await userDoc.collection('schedules').get();
+      for (final doc in schSnap.docs) {
+        final data = doc.data();
+        final s = ScheduleModel(
+          syncId: doc.id,
+          subjectId: data['subjectId'],
+          dayOfWeek: data['dayOfWeek'],
+          startTime: data['startTime'],
+          endTime: data['endTime'],
+          classroom: data['classroom'],
+          createdAt: DateTime.parse(data['createdAt']),
+          isSynced: true,
+        );
+        await _db.saveSchedule(s);
+        count++;
+      }
+
+      // 5. Descargar Eventos
+      final evSnap = await userDoc.collection('events').get();
+      for (final doc in evSnap.docs) {
+        final data = doc.data();
+        final e = EventModel(
+          syncId: doc.id,
+          subjectId: data['subjectId'],
+          title: data['title'],
+          notes: data['notes'],
+          dateTime: DateTime.parse(data['dateTime']),
+          type: EventType.values.firstWhere(
+            (v) => v.name == data['type'],
+            orElse: () => EventType.other,
+          ),
+          isSynced: true,
+        );
+        await _db.saveEvent(e);
+        count++;
+      }
+
+      _lastSyncAt = DateTime.now();
+      _notifyStatus();
 
       return SyncResult(
         success: true,
