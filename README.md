@@ -6,6 +6,11 @@ Aplicación móvil para gestionar tu vida académica: semestres, materias, horar
   <img src="assets/images/logo.png" alt="UniCal" width="200">
 </p>
 
+## 🌐 Versión Web
+
+**[Accede a UniCal Web](https://unical-phi.vercel.app)** — Versión web de la aplicación  
+⚠️ **Nota importante:** La versión web solo funciona correctamente en computadores. En dispositivos móviles la página se verá en blanco.
+
 ## ✨ Características
 
 - 📚 **Gestión de Semestres** — Crea, edita, archiva y comparte tus semestres
@@ -24,7 +29,7 @@ Aplicación móvil para gestionar tu vida académica: semestres, materias, horar
 | Plataforma | Estado |
 |------------|--------|
 | Android    | ✅ Disponible |
-| Web        | ✅ Disponible |
+| Web        | ✅ Disponible (solo desktop) |
 | Windows    | 🔜 Próximamente |
 
 ## 📥 Descarga
@@ -42,12 +47,12 @@ Descarga la última versión desde [**GitHub Releases**](https://github.com/Ange
 ## 🚀 Desarrollo Local
 
 ### Requisitos
+
 - Flutter SDK 3.10.7+
 - Android Studio o VS Code
 - Firebase CLI (para configurar Firebase)
 
 ### Instrucciones
-
 ```bash
 # Clonar el repositorio
 git clone https://github.com/Angel-Gil/Calendario-Universitario.git
@@ -61,7 +66,6 @@ flutter run
 ```
 
 ## 📂 Estructura del Proyecto
-
 ```
 lib/
 ├── config/         # Tema y configuración
@@ -75,7 +79,6 @@ lib/
 │   └── settings/   # Configuración
 ├── services/       # Servicios (Auth, DB, Sync, etc.)
 └── main.dart       # Punto de entrada
-
 pagina_web/         # Landing page (Vercel)
 ```
 
