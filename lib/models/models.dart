@@ -8,4 +8,5 @@ export 'subject_model.dart';
 export 'schedule_model.dart';
 export 'schedule_slot_model.dart';
 export 'grade_period_model.dart';
+export 'grade_entry_model.dart';
 export 'event_model.dart';

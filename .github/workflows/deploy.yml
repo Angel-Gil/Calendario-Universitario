@@ -1,0 +1,30 @@
+name: Deploy Flutter Web to Vercel
+
+on:
+  push:
+    branches:
+      - main # O la rama que uses
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Build Web
+        run: |
+          flutter build web --release
+
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v20
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }} # Debes crear este secreto
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }} # Debes crear este secreto
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }} # Debes crear este secreto
+          vercel-args: '--prod'
+          working-directory: ./build/web

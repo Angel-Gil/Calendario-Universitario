@@ -385,6 +385,11 @@ class LocalDatabaseService {
       obtainedGrade: json['obtainedGrade'] != null
           ? (json['obtainedGrade'] as num).toDouble()
           : null,
+      grades: json['grades'] != null
+          ? (json['grades'] as List)
+                .map((g) => GradeEntry.fromJson(Map<String, dynamic>.from(g)))
+                .toList()
+          : [],
       order: json['order'],
       isSynced: json['isSynced'] ?? false,
     );
@@ -503,5 +508,68 @@ class LocalDatabaseService {
         .catchError(
           (e) => debugPrint('Cloud: Error eliminando $collection/$docId: $e'),
         );
+  }
+
+  /// Migra datos del guest al nuevo usuario autenticado
+  Future<int> migrateUserData(String oldUserId, String newUserId) async {
+    int count = 0;
+
+    // Migrar semestres
+    final semesters = _semesterBox.values
+        .map((data) => _semesterFromMap(data))
+        .where((s) => s.userId == oldUserId)
+        .toList();
+
+    for (final semester in semesters) {
+      final updated = SemesterModel(
+        syncId: semester.syncId,
+        userId: newUserId,
+        name: semester.name,
+        startDate: semester.startDate,
+        endDate: semester.endDate,
+        status: semester.status,
+        isSynced: false, // Mark for sync
+        deletedAt: semester.deletedAt,
+      );
+      await _semesterBox.put(updated.syncId, updated.toJson());
+      count++;
+
+      // Migrar materias del semestre
+      final subjects = _subjectBox.values
+          .map((data) => _subjectFromMap(data))
+          .where((s) => s.semesterId == semester.syncId)
+          .toList();
+
+      for (final subject in subjects) {
+        final updatedSubject = subject.copyWith(isSynced: false);
+        await _subjectBox.put(updatedSubject.syncId, updatedSubject.toJson());
+        count++;
+      }
+    }
+
+    // Marcar grade periods y events como no sincronizados
+    for (final key in _gradePeriodBox.keys) {
+      final data = _gradePeriodBox.get(key);
+      if (data != null) {
+        final json = Map<String, dynamic>.from(data);
+        json['isSynced'] = false;
+        await _gradePeriodBox.put(key, json);
+        count++;
+      }
+    }
+
+    for (final key in _eventBox.keys) {
+      final data = _eventBox.get(key);
+      if (data != null) {
+        final json = Map<String, dynamic>.from(data);
+        json['isSynced'] = false;
+        await _eventBox.put(key, json);
+        count++;
+      }
+    }
+
+    _notifyChange();
+    debugPrint('LocalDB: Migrados $count items de $oldUserId a $newUserId');
+    return count;
   }
 }

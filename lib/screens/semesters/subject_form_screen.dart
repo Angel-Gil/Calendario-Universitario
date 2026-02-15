@@ -308,13 +308,7 @@ class _SubjectFormScreenState extends State<SubjectFormScreen> {
               Row(
                 children: [
                   Expanded(
-                    child: ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Hora inicio'),
-                      subtitle: Text(
-                        '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}',
-                      ),
-                      trailing: const Icon(Icons.access_time),
+                    child: InkWell(
                       onTap: () async {
                         final time = await showTimePicker(
                           context: context,
@@ -323,16 +317,59 @@ class _SubjectFormScreenState extends State<SubjectFormScreen> {
                         if (time != null)
                           setDialogState(() => startTime = time);
                       },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.outline.withValues(alpha: 0.5),
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text(
+                                      'Hora inicio',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withValues(alpha: 0.6),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.access_time, size: 20),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
+                  const SizedBox(width: 12),
                   Expanded(
-                    child: ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Hora fin'),
-                      subtitle: Text(
-                        '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}',
-                      ),
-                      trailing: const Icon(Icons.access_time),
+                    child: InkWell(
                       onTap: () async {
                         final time = await showTimePicker(
                           context: context,
@@ -340,6 +377,54 @@ class _SubjectFormScreenState extends State<SubjectFormScreen> {
                         );
                         if (time != null) setDialogState(() => endTime = time);
                       },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.outline.withValues(alpha: 0.5),
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text(
+                                      'Hora fin',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withValues(alpha: 0.6),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.access_time, size: 20),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ],

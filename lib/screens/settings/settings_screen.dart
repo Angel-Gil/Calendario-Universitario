@@ -84,7 +84,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _SettingsTile(
             icon: Icons.notifications_outlined,
             title: 'Notificaciones',
-            onTap: () => _showNotificationSettingsDialog(context),
+            onTap: () => _showNotificationSettings(),
           ),
 
           if (!AuthService.instance.isGuest) ...[
@@ -483,12 +483,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showNotificationSettingsDialog(BuildContext context) {
+  void _showNotificationSettings() {
     final user = AuthService.instance.currentUser;
     if (user == null) return;
 
     bool enabled = user.notificationsEnabled;
-    Set<int> selectedOffsets = user.notificationOffsets.toSet();
+    List<int> offsets = List.from(user.notificationOffsets);
+
+    String _formatOffset(int minutes) {
+      if (minutes >= 1440) {
+        final days = minutes ~/ 1440;
+        return '$days día${days > 1 ? 's' : ''} antes';
+      } else if (minutes >= 60) {
+        final hours = minutes ~/ 60;
+        return '$hours hora${hours > 1 ? 's' : ''} antes';
+      } else {
+        return '$minutes min antes';
+      }
+    }
 
     showDialog(
       context: context,
@@ -505,30 +517,101 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               if (enabled) ...[
                 const Divider(),
-                const Text('Recordatorios por defecto:'),
+                const Text('Recordatorios:'),
                 const SizedBox(height: 8),
                 Wrap(
-                  spacing: 8,
-                  children: [
-                    FilterChip(
-                      label: const Text('15 min antes'),
-                      selected: selectedOffsets.contains(15),
-                      onSelected: (selected) => setDialogState(() {
-                        selected
-                            ? selectedOffsets.add(15)
-                            : selectedOffsets.remove(15);
-                      }),
-                    ),
-                    FilterChip(
-                      label: const Text('1 día antes'),
-                      selected: selectedOffsets.contains(1440),
-                      onSelected: (selected) => setDialogState(() {
-                        selected
-                            ? selectedOffsets.add(1440)
-                            : selectedOffsets.remove(1440);
-                      }),
-                    ),
-                  ],
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: offsets
+                      .map(
+                        (offset) => Chip(
+                          label: Text(
+                            _formatOffset(offset),
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          deleteIcon: const Icon(Icons.close, size: 16),
+                          onDeleted: () =>
+                              setDialogState(() => offsets.remove(offset)),
+                        ),
+                      )
+                      .toList(),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    int amount = 15;
+                    String unit = 'min';
+                    showDialog(
+                      context: context,
+                      builder: (ctx) => StatefulBuilder(
+                        builder: (ctx, setInner) => AlertDialog(
+                          title: const Text('Agregar recordatorio'),
+                          content: Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  keyboardType: TextInputType.number,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Cantidad',
+                                  ),
+                                  onChanged: (v) =>
+                                      amount = int.tryParse(v) ?? 15,
+                                  controller: TextEditingController(text: '15'),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  value: unit,
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: 'min',
+                                      child: Text('Minutos'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'hr',
+                                      child: Text('Horas'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'day',
+                                      child: Text('Días'),
+                                    ),
+                                  ],
+                                  onChanged: (v) => setInner(() => unit = v!),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Unidad',
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: const Text('Cancelar'),
+                            ),
+                            ElevatedButton(
+                              onPressed: () {
+                                int minutes = amount;
+                                if (unit == 'hr') minutes = amount * 60;
+                                if (unit == 'day') minutes = amount * 1440;
+                                if (minutes > 0 && !offsets.contains(minutes)) {
+                                  setDialogState(() {
+                                    offsets.add(minutes);
+                                    offsets.sort();
+                                  });
+                                }
+                                Navigator.pop(ctx);
+                              },
+                              child: const Text('Agregar'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Agregar recordatorio'),
                 ),
               ],
             ],
@@ -542,7 +625,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onPressed: () async {
                 await AuthService.instance.updateProfile(
                   notificationsEnabled: enabled,
-                  notificationOffsets: selectedOffsets.toList(),
+                  notificationOffsets: offsets,
                 );
                 if (mounted) {
                   Navigator.pop(context);

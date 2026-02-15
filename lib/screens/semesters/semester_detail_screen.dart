@@ -154,6 +154,8 @@ class _SemesterDetailScreenState extends State<SemesterDetailScreen> {
                     onDelete: () => _deleteSubject(subject),
                   ),
                 ),
+              // Spacer para que el FAB no tape la última tarjeta
+              const SizedBox(height: 80),
             ],
           ),
         ),

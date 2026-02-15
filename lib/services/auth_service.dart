@@ -119,6 +119,12 @@ class AuthService {
       // Guardar localmente
       await _db.saveUser(user);
 
+      // Migrar datos del guest si existen
+      final migrated = await _db.migrateUserData('guest_user', uid);
+      if (migrated > 0) {
+        debugPrint('AuthService: Migrados $migrated items del guest a $uid');
+      }
+
       _currentUser = user;
       _authNotifier.value = user;
 
@@ -166,6 +172,12 @@ class AuthService {
 
       // Guardar localmente
       await _db.saveUser(user);
+
+      // Migrar datos del guest si existen
+      final migrated = await _db.migrateUserData('guest_user', uid);
+      if (migrated > 0) {
+        debugPrint('AuthService: Migrados $migrated items del guest a $uid');
+      }
 
       _currentUser = user;
       _authNotifier.value = user;

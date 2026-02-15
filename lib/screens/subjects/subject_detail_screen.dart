@@ -3,9 +3,10 @@ import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 import '../../config/theme.dart';
 import '../../models/models.dart';
-import '../../models/enums.dart'; // Importante para SubjectStatus
+import '../../models/enums.dart';
 import '../../services/auth_service.dart';
 import '../../services/local_database_service.dart';
+import '../semesters/subject_form_screen.dart';
 
 /// Pantalla de detalle de una materia
 class SubjectDetailScreen extends StatefulWidget {
@@ -93,8 +94,9 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen>
   double get _currentGrade {
     double total = 0, pct = 0;
     for (final p in _periods) {
-      if (p.obtainedGrade != null) {
-        total += p.obtainedGrade! * p.percentage;
+      final grade = p.computedGrade;
+      if (grade != null) {
+        total += grade * p.percentage;
         pct += p.percentage;
       }
     }
@@ -103,14 +105,14 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen>
 
   double get _accumulated {
     return _periods
-        .where((p) => p.obtainedGrade != null)
-        .fold(0.0, (s, p) => s + p.obtainedGrade! * p.percentage);
+        .where((p) => p.computedGrade != null)
+        .fold(0.0, (s, p) => s + p.computedGrade! * p.percentage);
   }
 
   double get _required {
     if (_subject == null) return 0;
     final rem = _periods
-        .where((p) => p.obtainedGrade == null)
+        .where((p) => p.computedGrade == null)
         .fold(0.0, (s, p) => s + p.percentage);
     return rem > 0 ? (_subject!.passingGrade - _accumulated) / rem : 0;
   }
@@ -118,13 +120,12 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen>
   SubjectStatus get _status {
     if (_subject == null) return SubjectStatus.inProgress;
 
-    if (_periods.every((p) => p.obtainedGrade != null)) {
+    if (_periods.every((p) => p.computedGrade != null)) {
       return _accumulated >= _subject!.passingGrade
           ? SubjectStatus.approved
           : SubjectStatus.failed;
     }
 
-    // Asumimos escala 0-5
     final maxGrade = AuthService.instance.currentUser?.gradeScaleMax ?? 5.0;
 
     if (_required > maxGrade) return SubjectStatus.failed;
@@ -146,6 +147,24 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen>
           icon: const Icon(Icons.arrow_back),
           onPressed: () => context.pop(),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.edit_outlined),
+            tooltip: 'Editar materia',
+            onPressed: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => SubjectFormScreen(
+                    semesterId: _subject!.semesterId,
+                    existing: _subject!,
+                  ),
+                ),
+              );
+              if (result == true) _loadData();
+            },
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -319,140 +338,383 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen>
 
   Widget _periodCard(GradePeriodModel p) {
     final color = Color(_subject!.colorValue);
+    final computed = p.computedGrade;
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: color.withValues(alpha: 0.1),
-          child: Text(
-            '${(p.percentage * 100).toInt()}%',
-            style: TextStyle(color: color, fontSize: 12),
+      child: InkWell(
+        onTap: () => _editGrade(p),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: color.withValues(alpha: 0.1),
+                    child: Text(
+                      '${(p.percentage * 100).toInt()}%',
+                      style: TextStyle(color: color, fontSize: 12),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          p.name,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          computed != null
+                              ? 'Puntos: ${(computed * p.percentage).toStringAsFixed(2)}'
+                              : 'Sin calificar',
+                          style: TextStyle(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.6),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  computed != null
+                      ? Text(
+                          computed.toStringAsFixed(1),
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: color,
+                          ),
+                        )
+                      : TextButton(
+                          onPressed: () => _editGrade(p),
+                          child: const Text('Ingresar'),
+                        ),
+                ],
+              ),
+              // Mostrar sub-notas si existen
+              if (p.grades.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                const Divider(height: 1),
+                const SizedBox(height: 8),
+                ...p.grades.map(
+                  (g) => Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 8),
+                        Icon(
+                          Icons.circle,
+                          size: 6,
+                          color: color.withValues(alpha: 0.5),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '${g.label} (${(g.weight * 100).toInt()}%)',
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                        Text(
+                          g.grade?.toStringAsFixed(1) ?? '—',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: g.grade != null
+                                ? color
+                                : Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.3),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
-        title: Text(p.name),
-        subtitle: Text(
-          p.obtainedGrade != null
-              ? 'Puntos: ${(p.obtainedGrade! * p.percentage).toStringAsFixed(2)}'
-              : 'Sin calificar',
-        ),
-        trailing: p.obtainedGrade != null
-            ? Text(
-                p.obtainedGrade!.toStringAsFixed(1),
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                ),
-              )
-            : TextButton(
-                onPressed: () => _editGrade(p),
-                child: const Text('Ingresar'),
-              ),
-        onTap: () => _editGrade(p),
       ),
     );
   }
 
   void _editGrade(GradePeriodModel p) {
     final maxGrade = AuthService.instance.currentUser?.gradeScaleMax ?? 5.0;
-
-    final gradeCtrl = TextEditingController(
-      text: p.obtainedGrade?.toStringAsFixed(1) ?? '',
-    );
+    final nameCtrl = TextEditingController(text: p.name);
     final percentageCtrl = TextEditingController(
       text: (p.percentage * 100).toStringAsFixed(0),
     );
-    final nameCtrl = TextEditingController(text: p.name);
+
+    // Initialize sub-grades list
+    List<_GradeEntryUI> entries = p.grades.isEmpty
+        ? [] // Empty initially, user can add
+        : p.grades
+              .map(
+                (g) => _GradeEntryUI(
+                  labelCtrl: TextEditingController(text: g.label),
+                  weightCtrl: TextEditingController(
+                    text: (g.weight * 100).toStringAsFixed(0),
+                  ),
+                  gradeCtrl: TextEditingController(
+                    text: g.grade?.toStringAsFixed(1) ?? '',
+                  ),
+                  id: g.id,
+                ),
+              )
+              .toList();
+
+    // If no entries and no old grade, start with 3 defaults
+    if (entries.isEmpty && p.obtainedGrade == null && p.grades.isEmpty) {
+      // Don't add defaults — let user choose between simple grade or sub-notes
+    }
 
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Editar Corte'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameCtrl,
-              decoration: const InputDecoration(labelText: 'Nombre'),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: percentageCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Porcentaje (%)',
-                      suffixText: '%',
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          double weightSum = entries.fold(0.0, (s, e) {
+            final w =
+                double.tryParse(e.weightCtrl.text.replaceAll(',', '.')) ?? 0.0;
+            return s + w;
+          });
+          bool weightsValid = entries.isEmpty || (weightSum - 100).abs() < 0.01;
+
+          return AlertDialog(
+            title: const Text('Editar Corte'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: nameCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre del corte',
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: gradeCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: 'Nota',
-                      suffixText: '/ $maxGrade',
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: percentageCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Peso del corte (%)',
+                        suffixText: '%',
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Notas',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        TextButton.icon(
+                          onPressed: () => setDialogState(() {
+                            entries.add(
+                              _GradeEntryUI(
+                                labelCtrl: TextEditingController(),
+                                weightCtrl: TextEditingController(),
+                                gradeCtrl: TextEditingController(),
+                                id: const Uuid().v4(),
+                              ),
+                            );
+                          }),
+                          icon: const Icon(Icons.add, size: 16),
+                          label: const Text('Agregar'),
+                        ),
+                      ],
+                    ),
+                    if (entries.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Text(
+                          'Sin sub-notas. Puedes agregar quizzes, talleres, parciales, etc.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.5),
+                          ),
+                        ),
+                      )
+                    else
+                      ...entries.asMap().entries.map((entry) {
+                        final i = entry.key;
+                        final e = entry.value;
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                flex: 3,
+                                child: TextField(
+                                  controller: e.labelCtrl,
+                                  decoration: InputDecoration(
+                                    hintText: 'Ej: Quiz ${i + 1}',
+                                    isDense: true,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 10,
+                                    ),
+                                  ),
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                flex: 2,
+                                child: TextField(
+                                  controller: e.weightCtrl,
+                                  keyboardType: TextInputType.number,
+                                  decoration: const InputDecoration(
+                                    hintText: '%',
+                                    suffixText: '%',
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 10,
+                                    ),
+                                  ),
+                                  style: const TextStyle(fontSize: 13),
+                                  onChanged: (_) => setDialogState(() {}),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                flex: 2,
+                                child: TextField(
+                                  controller: e.gradeCtrl,
+                                  keyboardType: TextInputType.number,
+                                  decoration: InputDecoration(
+                                    hintText: '/$maxGrade',
+                                    isDense: true,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 10,
+                                    ),
+                                  ),
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              ),
+                              SizedBox(
+                                width: 28,
+                                child: IconButton(
+                                  icon: Icon(
+                                    Icons.close,
+                                    size: 16,
+                                    color: AppTheme.errorColor,
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                  onPressed: () =>
+                                      setDialogState(() => entries.removeAt(i)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                    if (entries.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          'Suma pesos: ${weightSum.toStringAsFixed(0)}%${weightsValid ? ' ✓' : ' (debe ser 100%)'}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: weightsValid
+                                ? Colors.green
+                                : AppTheme.errorColor,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final gText = gradeCtrl.text.replaceAll(',', '.').trim();
-              final pText = percentageCtrl.text.replaceAll(',', '.').trim();
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: (entries.isNotEmpty && !weightsValid)
+                    ? null
+                    : () async {
+                        final pText = percentageCtrl.text
+                            .replaceAll(',', '.')
+                            .trim();
+                        final pct = double.tryParse(pText);
 
-              final g = gText.isEmpty ? null : double.tryParse(gText);
-              final pct = double.tryParse(pText);
+                        if (pct == null || pct <= 0 || pct > 100) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Porcentaje del corte inválido'),
+                            ),
+                          );
+                          return;
+                        }
 
-              if (pct != null && pct > 0 && pct <= 100) {
-                if (g != null && (g < 0 || g > maxGrade)) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Nota inválida')),
-                  );
-                  return;
-                }
+                        // Build grades list
+                        final gradeEntries = <GradeEntry>[];
+                        for (final e in entries) {
+                          final label = e.labelCtrl.text.trim();
+                          final wt = double.tryParse(
+                            e.weightCtrl.text.replaceAll(',', '.'),
+                          );
+                          final gr = e.gradeCtrl.text.trim().isEmpty
+                              ? null
+                              : double.tryParse(
+                                  e.gradeCtrl.text.replaceAll(',', '.'),
+                                );
 
-                // Crear copia con nuevos datos
-                final updated = GradePeriodModel(
-                  syncId: p.syncId,
-                  subjectId: p.subjectId,
-                  name: nameCtrl.text.isEmpty ? p.name : nameCtrl.text,
-                  percentage: pct / 100.0,
-                  obtainedGrade: g,
-                  order: p.order,
-                  dueDate: p.dueDate,
-                  createdAt: p.createdAt,
-                  updatedAt: DateTime.now(),
-                  isSynced: false,
-                );
+                          if (label.isEmpty || wt == null || wt <= 0) continue;
+                          if (gr != null && (gr < 0 || gr > maxGrade)) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Nota inválida en "$label"'),
+                              ),
+                            );
+                            return;
+                          }
+                          gradeEntries.add(
+                            GradeEntry(
+                              id: e.id,
+                              label: label,
+                              weight: wt / 100.0,
+                              grade: gr,
+                            ),
+                          );
+                        }
 
-                await _db.saveGradePeriod(updated);
+                        final updated = GradePeriodModel(
+                          syncId: p.syncId,
+                          subjectId: p.subjectId,
+                          name: nameCtrl.text.isEmpty ? p.name : nameCtrl.text,
+                          percentage: pct / 100.0,
+                          obtainedGrade: null, // Use grades list instead
+                          grades: gradeEntries,
+                          order: p.order,
+                          dueDate: p.dueDate,
+                          createdAt: p.createdAt,
+                          updatedAt: DateTime.now(),
+                          isSynced: false,
+                        );
 
-                // Recargar datos
-                _loadData();
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Porcentaje inválido')),
-                );
-                return;
-              }
-              if (mounted) Navigator.pop(context);
-            },
-            child: const Text('Guardar'),
-          ),
-        ],
+                        await _db.saveGradePeriod(updated);
+                        _loadData();
+                        if (mounted) Navigator.pop(context);
+                      },
+                child: const Text('Guardar'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -494,4 +756,19 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen>
       },
     );
   }
+}
+
+/// Helper para manejar controladores de cada nota en el dialog
+class _GradeEntryUI {
+  final TextEditingController labelCtrl;
+  final TextEditingController weightCtrl;
+  final TextEditingController gradeCtrl;
+  final String id;
+
+  _GradeEntryUI({
+    required this.labelCtrl,
+    required this.weightCtrl,
+    required this.gradeCtrl,
+    required this.id,
+  });
 }
