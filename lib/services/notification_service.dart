@@ -1,11 +1,13 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:local_notifier/local_notifier.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
-import 'package:universal_html/html.dart' as html;
+
+// Conditional import: web-safe
+import 'notification_web_stub.dart'
+    if (dart.library.js_interop) 'notification_web_impl.dart';
 
 class NotificationService {
   static NotificationService? _instance;
@@ -23,23 +25,35 @@ class NotificationService {
   Timer? _schedulerTimer;
   final List<_ScheduledNotification> _scheduledNotifications = [];
 
+  bool get _isMobile {
+    if (kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+  }
+
+  bool get _isDesktop {
+    if (kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.linux;
+  }
+
   Future<void> initialize() async {
     if (_isInitialized) return;
 
     tz.initializeTimeZones();
 
     if (kIsWeb) {
-      // Web Initialization
-      final permission = await html.Notification.requestPermission();
-      debugPrint('Web Notification Permission: $permission');
-    } else if (Platform.isWindows) {
-      // Windows Initialization
+      // Web Initialization (WASM-compatible)
+      await initializeWebNotifications();
+    } else if (_isDesktop) {
+      // Windows/macOS/Linux Initialization
       await localNotifier.setup(
         appName: 'UniCal',
         shortcutPolicy: ShortcutPolicy.requireCreate,
       );
-    } else if (Platform.isAndroid) {
-      // Android Initialization
+    } else if (_isMobile) {
+      // Android/iOS Initialization
       const AndroidInitializationSettings initializationSettingsAndroid =
           AndroidInitializationSettings('@mipmap/ic_launcher');
 
@@ -61,8 +75,8 @@ class NotificationService {
           ?.requestNotificationsPermission();
     }
 
-    // Iniciar timer para Windows/Web
-    if (kIsWeb || (!kIsWeb && Platform.isWindows)) {
+    // Iniciar timer para Windows/Web (sin scheduling nativo)
+    if (kIsWeb || _isDesktop) {
       _startSchedulerTimer();
     }
 
@@ -77,8 +91,8 @@ class NotificationService {
     String? payload,
   }) async {
     if (kIsWeb) {
-      _showWebNotification(title, body);
-    } else if (Platform.isWindows) {
+      await showWebNotification(title, body);
+    } else if (_isDesktop) {
       final notification = LocalNotification(
         identifier: id.toString(),
         title: title,
@@ -118,7 +132,7 @@ class NotificationService {
     if (scheduledDate.isBefore(now)) return;
 
     try {
-      if (!kIsWeb && Platform.isAndroid) {
+      if (_isMobile) {
         await _flutterLocalNotificationsPlugin.zonedSchedule(
           id: id,
           title: title,
@@ -134,12 +148,11 @@ class NotificationService {
             ),
           ),
           androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-
           matchDateTimeComponents: DateTimeComponents.time,
           payload: payload,
         );
       } else {
-        // Windows/Web implementation
+        // Windows/Web: usar timer polling
         _scheduledNotifications.add(
           _ScheduledNotification(
             id: id,
@@ -157,7 +170,7 @@ class NotificationService {
   }
 
   Future<void> cancelNotification(int id) async {
-    if (!kIsWeb && Platform.isAndroid) {
+    if (_isMobile) {
       await _flutterLocalNotificationsPlugin.cancel(id: id);
     } else {
       _scheduledNotifications.removeWhere((n) => n.id == id);
@@ -165,16 +178,10 @@ class NotificationService {
   }
 
   Future<void> cancelAllNotifications() async {
-    if (!kIsWeb && Platform.isAndroid) {
+    if (_isMobile) {
       await _flutterLocalNotificationsPlugin.cancelAll();
     } else {
       _scheduledNotifications.clear();
-    }
-  }
-
-  void _showWebNotification(String title, String body) {
-    if (html.Notification.permission == 'granted') {
-      html.Notification(title, body: body);
     }
   }
 
